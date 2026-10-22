@@ -158,6 +158,10 @@ svg.i .f{fill:currentColor;stroke:none}
 .option.wrong .ltr{background:var(--no);border-color:var(--no);color:#fff}
 :root[data-theme="dark"] .option.correct .ltr,:root[data-theme="dark"] .option.wrong .ltr{color:#0b1424}
 .option .ltr svg{width:18px;height:18px;stroke-width:2.6}
+.option.wrong{animation:shake .38s ease-in-out}
+.option.correct{animation:okpop .45s ease-out}
+@keyframes shake{20%{transform:translateX(-5px)}40%{transform:translateX(5px)}60%{transform:translateX(-3px)}80%{transform:translateX(3px)}}
+@keyframes okpop{40%{transform:scale(1.015)}}
 
 .fb{border-radius:22px;border:1.5px solid var(--line);padding:20px 22px;display:grid;gap:10px;transition:box-shadow .2s;animation:pop .25s ease-out}
 @keyframes pop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
@@ -258,7 +262,7 @@ svg.i .f{fill:currentColor;stroke:none}
 <header class="top"><div class="top-in">
   <a class="title back" href="../index.html" title="Voltar ao menu do Radar da Qualidade"><span class="bk"><svg class="i" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></span><strong>Radar da Qualidade</strong><span>Operação Fechamento · Veículos por assinatura</span></a>
   <div class="tools">
-    <button class="icon-btn" id="soundBtn" aria-pressed="true" aria-label="Narração ligada. Clique para desligar" title="Narração">
+    <button class="icon-btn" id="soundBtn" aria-pressed="true" aria-label="Som ligado (voz e efeitos). Clique para desligar" title="Desligar som">
       <svg class="i on"><use href="#i-vol"/></svg><svg class="i off"><use href="#i-volx"/></svg>
     </button>
     <button class="icon-btn" id="themeBtn" aria-label="Mudar tema" title="Mudar tema">
@@ -279,7 +283,7 @@ svg.i .f{fill:currentColor;stroke:none}
         <button class="btn primary" id="startBtn">Começar missão <svg class="i"><use href="#i-arrow"/></svg></button>
         <button class="btn" id="introBtn"><svg class="i"><use href="#i-head"/></svg><span id="introLabel">Ouvir apresentação</span></button>
       </div>
-      <p class="note">Ligue o som do aparelho para ouvir a narração. O ícone de alto-falante no topo liga e desliga a voz a qualquer momento.</p>
+      <p class="note">Ligue o som do aparelho para ouvir a narração. O ícone de alto-falante no topo liga e desliga a voz e os efeitos a qualquer momento.</p>
     </div>
     <div class="art" id="heroArt"></div>
   </section>
@@ -677,8 +681,35 @@ const sceneIds=i=>[`c${i}_quote`,`c${i}_ctx`,`c${i}_q`,`c${i}_o0`,`c${i}_o1`,`c$
 function setNarr(on){
   narr=on;try{localStorage.setItem('finx-narr',on?'on':'off')}catch(e){}
   const b=$('soundBtn');b.setAttribute('aria-pressed',String(on));
-  b.setAttribute('aria-label',on?'Narração ligada. Clique para desligar':'Narração desligada. Clique para ligar');
+  b.setAttribute('aria-label',on?'Som ligado (voz e efeitos). Clique para desligar':'Som desligado. Clique para ligar');b.title=on?'Desligar som':'Ligar som';
   if(!on)stopAudio();
+}
+
+/* ---------- efeitos sonoros (sintetizados, volume bem abaixo da voz) ---------- */
+function synth(ctx,dest,kind,t0){
+  const ok=kind==='ok';
+  const notes=ok?[[659.25,0],[830.61,.09],[1046.5,.18]]:[[233.08,0],[174.61,.15]];
+  const peak=ok?0.27:0.32,dur=ok?0.5:0.38;
+  notes.forEach(([f,d])=>{
+    const o=ctx.createOscillator(),g=ctx.createGain(),lp=ctx.createBiquadFilter();
+    o.type=ok?'sine':'triangle';o.frequency.value=f;
+    lp.type='lowpass';lp.frequency.value=ok?5000:700;
+    g.gain.setValueAtTime(0.0001,t0+d);
+    g.gain.exponentialRampToValueAtTime(peak,t0+d+.012);
+    g.gain.exponentialRampToValueAtTime(0.0001,t0+d+dur);
+    o.connect(lp);lp.connect(g);g.connect(dest);
+    o.start(t0+d);o.stop(t0+d+dur+.05);
+  });
+  return notes[notes.length-1][1]+dur;
+}
+let AC=null;
+function sfx(kind){
+  if(!narr)return 0;
+  try{
+    AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+    if(AC.state==='suspended')AC.resume();
+    return synth(AC,AC.destination,kind,AC.currentTime+.02);
+  }catch(e){return 0}
 }
 
 /* ---------- jogo ---------- */
@@ -740,7 +771,10 @@ function choose(j){
   $('nextBtn').disabled=false;$('nextBtn').focus({preventScroll:true});
   renderSteps();sync();
   box.scrollIntoView({behavior:'smooth',block:'nearest'});
-  if(narr)playIds([`c${i}_f${j}`],'scene');
+  if(narr){
+    const wait=Math.round(sfx(ok?'ok':'no')*1000)+120;
+    setTimeout(()=>{if(state.idx===i&&state.answered&&narr&&!$('gameView').hidden)playIds([`c${i}_f${j}`],'scene')},wait);
+  }
 }
 
 function next(){
